@@ -9,8 +9,7 @@ the result with the original track.
 
 ## Download
 
-Ready-to-install builds for macOS (AU / VST3 / Standalone, Apple Silicon + Intel) and
-Windows (VST3 / Standalone) are produced automatically by GitHub Actions on every push and
+Ready-to-install macOS builds (AU / VST3 / Standalone, Apple Silicon + Intel) are produced automatically by GitHub Actions on every push and
 published on the [Releases page](../../releases/tag/latest). On macOS, unzip and right-click
 **Install Red Trigger.command → Open**.
 

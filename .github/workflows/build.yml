@@ -22,8 +22,6 @@ jobs:
         include:
           - name: macOS
             os: macos-latest
-          - name: Windows
-            os: windows-latest
     defaults:
       run:
         shell: bash
@@ -38,12 +36,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Test
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            build/RedTriggerTests_artefacts/Release/RedTriggerTests.exe
-          else
-            build/RedTriggerTests_artefacts/Release/RedTriggerTests
-          fi
+        run: build/RedTriggerTests_artefacts/Release/RedTriggerTests
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -59,17 +52,6 @@ jobs:
           cp "packaging/mac/Install Red Trigger.command" packaging/mac/INSTALL.txt "$PKG/"
           lipo -info "$PKG/AU/Red Trigger.component/Contents/MacOS/Red Trigger"
           cd dist && ditto -c -k --sequesterRsrc --keepParent "Red Trigger" RedTrigger-macOS.zip
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          OUT=build/RedTrigger_artefacts/Release
-          PKG="dist/Red Trigger"
-          mkdir -p "$PKG"
-          cp -R "$OUT/VST3/Red Trigger.vst3" "$PKG/"
-          cp "$OUT/Standalone/Red Trigger.exe" "$PKG/"
-          cp packaging/windows/INSTALL.txt "$PKG/"
-          cd dist && 7z a RedTrigger-Windows.zip "Red Trigger"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -97,5 +79,4 @@ jobs:
             --title "Red Trigger (latest build)" \
             --notes "Automatic build of commit ${GITHUB_SHA::7}.
 
-          **macOS** (Apple Silicon + Intel, AU / VST3 / Standalone): download RedTrigger-macOS.zip, unzip, right-click *Install Red Trigger.command* → Open.
-          **Windows** (VST3 / Standalone): download RedTrigger-Windows.zip and see INSTALL.txt."
+          **macOS** (Apple Silicon + Intel, AU / VST3 / Standalone): download RedTrigger-macOS.zip, unzip, right-click *Install Red Trigger.command* → Open."
