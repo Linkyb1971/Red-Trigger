@@ -10,7 +10,7 @@ namespace dt::ui
 class DetectorDisplay : public juce::Component
 {
 public:
-    explicit DetectorDisplay (DrumTriggerProcessor& p) : processor (p)
+    explicit DetectorDisplay (RedTriggerProcessor& p) : processor (p)
     {
         history.resize (historySize);
         setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
@@ -137,7 +137,7 @@ private:
         p.setValueNotifyingHost (p.convertTo0to1 (db));
     }
 
-    DrumTriggerProcessor& processor;
+    RedTriggerProcessor& processor;
     std::vector<DisplayFifo::Point> history;
     int writePos = 0;
 };

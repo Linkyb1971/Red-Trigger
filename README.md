@@ -1,4 +1,4 @@
-# DrumTrigger
+# Red Trigger
 
 An insert drum-replacement / augmentation plugin (VST3, AU, Standalone) built with JUCE 8.
 Put it on a single drum track (kick, snare, tom…). It detects the hits, plays a multisampled
@@ -26,13 +26,13 @@ cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
 ```
 
-Output: `build/DrumTrigger_artefacts/Release/{AU,VST3,Standalone}`. Copy the plugin into
+Output: `build/RedTrigger_artefacts/Release/{AU,VST3,Standalone}`. Copy the plugin into
 `~/Library/Audio/Plug-Ins/Components` (AU) or `~/Library/Audio/Plug-Ins/VST3`. On macOS, a plugin
 you build yourself is signed ad-hoc and works on your own machine; to give it to other people you
 need to sign and notarize it with an Apple Developer ID. AAX (Pro Tools) is not set up because it
 needs Avid's SDK and a PACE signing account.
 
-Tests: `cmake --build build --target DrumTriggerTests && ./build/DrumTriggerTests_artefacts/Release/DrumTriggerTests`
+Tests: `cmake --build build --target RedTriggerTests && ./build/RedTriggerTests_artefacts/Release/RedTriggerTests`
 
 ## Signal flow
 
@@ -95,7 +95,7 @@ and a constant 120 dB/s release. The ratio goes 1:1 → ∞:1 → -1:1 like the 
      velocity layers you choose. The hits within a layer become round robins. You just need
      a folder of hits played at different strengths.
    - **From filenames**: `v1`, `v2`… (or `vel1`) pick the layer and `rr1`, `rr2`… the round-robin order.
-4. Name it and click **Save Instrument…**. It's saved to `~/Music/DrumTrigger/Instruments/`
+4. Name it and click **Save Instrument…**. It's saved to `~/Music/Red Trigger/Instruments/`
    and loaded right away. Everything in that folder (including subfolders) shows up in the
    instrument menu.
 
@@ -108,13 +108,13 @@ and mics can have different sample rates (they're resampled when the instrument 
 A `.dtz` is an ordinary zip file containing `instrument.xml` and a `samples/` folder:
 
 ```xml
-<DrumTriggerInstrument name="Snare A" version="1">
+<RedTriggerInstrument name="Snare A" version="1">
   <Layer velLo="1" velHi="42">
     <Hit direct="samples/snare_v1_rr1.wav" overhead="samples/snare_v1_rr1_OH.wav" room="samples/snare_v1_rr1_Room.wav"/>
     <Hit direct="samples/snare_v1_rr2.wav" overhead="..." room="..."/>
   </Layer>
   <Layer velLo="43" velHi="127"> ... </Layer>
-</DrumTriggerInstrument>
+</RedTriggerInstrument>
 ```
 
 You can unzip it, adjust velocity ranges by hand, and zip it back up. You can also load a bare

@@ -3,7 +3,7 @@
 using namespace dt;
 namespace col = dt::ui::colours;
 
-DrumTriggerEditor::DrumTriggerEditor (DrumTriggerProcessor& p)
+RedTriggerEditor::RedTriggerEditor (RedTriggerProcessor& p)
     : AudioProcessorEditor (p), proc (p),
       listenToggle   (p.apvts, pid::listen, "LISTEN"),
       alignToggle    (p.apvts, pid::align, "LATENCY COMP"),
@@ -146,13 +146,13 @@ DrumTriggerEditor::DrumTriggerEditor (DrumTriggerProcessor& p)
     startTimerHz (30);
 }
 
-DrumTriggerEditor::~DrumTriggerEditor()
+RedTriggerEditor::~RedTriggerEditor()
 {
     proc.removeChangeListener (this);
     setLookAndFeel (nullptr);
 }
 
-void DrumTriggerEditor::loadFile (const juce::File& f)
+void RedTriggerEditor::loadFile (const juce::File& f)
 {
     juce::String msg;
     if (! proc.loadInstrument (f, msg))
@@ -161,7 +161,7 @@ void DrumTriggerEditor::loadFile (const juce::File& f)
     updateInstrumentInfo();
 }
 
-void DrumTriggerEditor::showBuilder (bool show)
+void RedTriggerEditor::showBuilder (bool show)
 {
     builderButton.setToggleState (show, juce::dontSendNotification);
     builder.setVisible (show);
@@ -170,7 +170,7 @@ void DrumTriggerEditor::showBuilder (bool show)
         c->setVisible (! show);
 }
 
-void DrumTriggerEditor::refreshInstrumentList()
+void RedTriggerEditor::refreshInstrumentList()
 {
     instrumentFiles = findInstrumentsInDefaultFolder();
     const auto current = proc.getInstrumentFile();
@@ -194,7 +194,7 @@ void DrumTriggerEditor::refreshInstrumentList()
     instrumentBox.setSelectedId (idx >= 0 ? idx + 2 : 0, juce::dontSendNotification);
 }
 
-void DrumTriggerEditor::updateInstrumentInfo()
+void RedTriggerEditor::updateInstrumentInfo()
 {
     auto inst = proc.getLoadedInstrument();
     juce::String text;
@@ -214,13 +214,13 @@ void DrumTriggerEditor::updateInstrumentInfo()
         sampleKnobs[(size_t) (4 + m)]->setAlpha (inst == nullptr || inst->micPresent[(size_t) m] ? 1.0f : 0.35f);
 }
 
-void DrumTriggerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+void RedTriggerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     refreshInstrumentList();
     updateInstrumentInfo();
 }
 
-void DrumTriggerEditor::timerCallback()
+void RedTriggerEditor::timerCallback()
 {
     inMeter.update (proc.inputPeak.exchange (0.0f));
     trigMeter.update (proc.triggerPeak.exchange (0.0f));
@@ -244,14 +244,14 @@ void DrumTriggerEditor::timerCallback()
         display.tick();
 }
 
-void DrumTriggerEditor::paint (juce::Graphics& g)
+void RedTriggerEditor::paint (juce::Graphics& g)
 {
     g.fillAll (col::background);
 
     auto header = getLocalBounds().removeFromTop (52).reduced (12, 0);
     g.setColour (col::text);
     g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-    g.drawText ("DRUM", header.removeFromLeft (64), juce::Justification::centredLeft);
+    g.drawText ("RED", header.removeFromLeft (50), juce::Justification::centredLeft);
     g.setColour (col::accent);
     g.drawText ("TRIGGER", header.removeFromLeft (110), juce::Justification::centredLeft);
 
@@ -263,7 +263,7 @@ void DrumTriggerEditor::paint (juce::Graphics& g)
     g.drawEllipse (led, 1.0f);
 }
 
-void DrumTriggerEditor::resized()
+void RedTriggerEditor::resized()
 {
     // header
     {

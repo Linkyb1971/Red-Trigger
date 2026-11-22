@@ -3,21 +3,21 @@
 
 using namespace dt;
 
-DrumTriggerProcessor::DrumTriggerProcessor()
+RedTriggerProcessor::RedTriggerProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts (*this, nullptr, "DrumTriggerState", createParameterLayout())
+      apvts (*this, nullptr, "RedTriggerState", createParameterLayout())
 {
     startTimer (1000);
 }
 
-DrumTriggerProcessor::~DrumTriggerProcessor()
+RedTriggerProcessor::~RedTriggerProcessor()
 {
     stopTimer();
 }
 
-bool DrumTriggerProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool RedTriggerProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
@@ -27,7 +27,7 @@ bool DrumTriggerProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
     return inOk && outOk && in.size() <= out.size();
 }
 
-void DrumTriggerProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void RedTriggerProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     detector.prepare (sampleRate);
     engine.prepare (sampleRate);
@@ -52,7 +52,7 @@ void DrumTriggerProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     setLatencySamples (currentLatency);
 }
 
-void DrumTriggerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void RedTriggerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -264,7 +264,7 @@ void DrumTriggerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     outputPeak = std::max (outputPeak.load(), outPk);
 }
 
-bool DrumTriggerProcessor::loadInstrument (const juce::File& file, juce::String& message)
+bool RedTriggerProcessor::loadInstrument (const juce::File& file, juce::String& message)
 {
     Instrument::Ptr inst;
     message.clear();
@@ -294,7 +294,7 @@ bool DrumTriggerProcessor::loadInstrument (const juce::File& file, juce::String&
     return true;
 }
 
-void DrumTriggerProcessor::timerCallback()
+void RedTriggerProcessor::timerCallback()
 {
     // Free instruments nobody but the graveyard references any more.
     for (int i = graveyard.size(); --i >= 0;)
@@ -302,7 +302,7 @@ void DrumTriggerProcessor::timerCallback()
             graveyard.remove (i);
 }
 
-void DrumTriggerProcessor::getStateInformation (juce::MemoryBlock& destData)
+void RedTriggerProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("instrumentPath", instrumentFile.getFullPathName(), nullptr);
@@ -310,7 +310,7 @@ void DrumTriggerProcessor::getStateInformation (juce::MemoryBlock& destData)
         copyXmlToBinary (*xml, destData);
 }
 
-void DrumTriggerProcessor::setStateInformation (const void* data, int sizeInBytes)
+void RedTriggerProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     auto xml = getXmlFromBinary (data, sizeInBytes);
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
@@ -342,16 +342,16 @@ void DrumTriggerProcessor::setStateInformation (const void* data, int sizeInByte
     if (juce::MessageManager::getInstance()->isThisTheMessageThread())
         load();
     else
-        juce::MessageManager::callAsync ([weak = juce::WeakReference<DrumTriggerProcessor> (this), load]
+        juce::MessageManager::callAsync ([weak = juce::WeakReference<RedTriggerProcessor> (this), load]
                                          { if (weak != nullptr) load(); });
 }
 
-juce::AudioProcessorEditor* DrumTriggerProcessor::createEditor()
+juce::AudioProcessorEditor* RedTriggerProcessor::createEditor()
 {
-    return new DrumTriggerEditor (*this);
+    return new RedTriggerEditor (*this);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new DrumTriggerProcessor();
+    return new RedTriggerProcessor();
 }

@@ -30,13 +30,13 @@ struct DisplayFifo
     std::array<Point, capacity> data;
 };
 
-class DrumTriggerProcessor : public juce::AudioProcessor,
+class RedTriggerProcessor : public juce::AudioProcessor,
                              public juce::ChangeBroadcaster,
                              private juce::Timer
 {
 public:
-    DrumTriggerProcessor();
-    ~DrumTriggerProcessor() override;
+    RedTriggerProcessor();
+    ~RedTriggerProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -47,7 +47,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "DrumTrigger"; }
+    const juce::String getName() const override { return "Red Trigger"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -107,6 +107,6 @@ private:
     juce::File instrumentFile;
     juce::String lastLoadError;
 
-    JUCE_DECLARE_WEAK_REFERENCEABLE (DrumTriggerProcessor)
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrumTriggerProcessor)
+    JUCE_DECLARE_WEAK_REFERENCEABLE (RedTriggerProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RedTriggerProcessor)
 };

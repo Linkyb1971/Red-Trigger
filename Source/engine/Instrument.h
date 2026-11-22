@@ -40,13 +40,13 @@ struct Layer
       .xml  — a bare instrument.xml whose sample paths are relative to the xml's folder
 
     instrument.xml:
-      <DrumTriggerInstrument name="Snare A" version="1">
+      <RedTriggerInstrument name="Snare A" version="1">
         <Layer velLo="1" velHi="42">
           <Hit direct="samples/snr_v1_rr1.wav" overhead="samples/snr_v1_rr1_oh.wav" room="..."/>
           <Hit direct="samples/snr_v1_rr2.wav"/>
         </Layer>
         ...
-      </DrumTriggerInstrument>
+      </RedTriggerInstrument>
 */
 class Instrument : public juce::ReferenceCountedObject
 {

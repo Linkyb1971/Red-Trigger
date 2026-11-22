@@ -4,13 +4,13 @@
 #include "ui/DetectorDisplay.h"
 #include "ui/BuilderPanel.h"
 
-class DrumTriggerEditor : public juce::AudioProcessorEditor,
+class RedTriggerEditor : public juce::AudioProcessorEditor,
                           private juce::Timer,
                           private juce::ChangeListener
 {
 public:
-    explicit DrumTriggerEditor (DrumTriggerProcessor&);
-    ~DrumTriggerEditor() override;
+    explicit RedTriggerEditor (RedTriggerProcessor&);
+    ~RedTriggerEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -23,7 +23,7 @@ private:
     void showBuilder (bool show);
     void loadFile (const juce::File& f);
 
-    DrumTriggerProcessor& proc;
+    RedTriggerProcessor& proc;
     dt::ui::LookAndFeel lnf;
 
     // header
@@ -51,5 +51,5 @@ private:
 
     dt::ui::Meter inMeter { "IN" }, trigMeter { "TRIG" }, outMeter { "OUT" }, grMeter { "GR", true };
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrumTriggerEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RedTriggerEditor)
 };

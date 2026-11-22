@@ -1,4 +1,4 @@
-// Headless tests for DrumTrigger: DSP, instrument building/loading, sample engine and the full processor.
+// Headless tests for Red Trigger: DSP, instrument building/loading, sample engine and the full processor.
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "dsp/Biquad.h"
 #include "dsp/TransientDetector.h"
@@ -319,8 +319,8 @@ static void testEngine (Instrument::Ptr inst)
 #if DT_TEST_PROCESSOR
 static void testProcessor (const juce::File& dtz)
 {
-    std::cout << "DrumTriggerProcessor\n";
-    DrumTriggerProcessor proc;
+    std::cout << "RedTriggerProcessor\n";
+    RedTriggerProcessor proc;
     proc.setPlayConfigDetails (1, 2, fs, 512);
     proc.prepareToPlay (fs, 512);
 
@@ -368,7 +368,7 @@ static void testProcessor (const juce::File& dtz)
     // State round trip
     juce::MemoryBlock state;
     proc.getStateInformation (state);
-    DrumTriggerProcessor proc2;
+    RedTriggerProcessor proc2;
     proc2.setStateInformation (state.getData(), (int) state.getSize());
     CHECK_NEAR (proc2.apvts.getRawParameterValue (dt::pid::threshold)->load(), -30.0, 0.05, "threshold restored");
     CHECK (proc2.getInstrumentFile() == dtz && proc2.getLoadedInstrument() != nullptr, "instrument restored from state");
@@ -389,7 +389,7 @@ static void testProcessor (const juce::File& dtz)
 /** Renders the editor (main page) to a PNG so the layout can be checked without a host. */
 static void snapshotEditor (const juce::File& dtz, const juce::File& png)
 {
-    DrumTriggerProcessor proc;
+    RedTriggerProcessor proc;
     proc.setPlayConfigDetails (2, 2, fs, 512);
     proc.prepareToPlay (fs, 512);
     juce::String msg;
@@ -407,7 +407,7 @@ static void snapshotEditor (const juce::File& dtz, const juce::File& png)
         buf.copyFrom (1, 0, in.data() + pos, 512);
         proc.processBlock (buf, midi);
     }
-    if (auto* e = dynamic_cast<DrumTriggerEditor*> (ed.get()))
+    if (auto* e = dynamic_cast<RedTriggerEditor*> (ed.get()))
         for (auto* c : e->getChildren())
             if (auto* d = dynamic_cast<dt::ui::DetectorDisplay*> (c)) d->tick();
 
@@ -424,7 +424,7 @@ int main (int argc, char** argv)
 #if DT_TEST_PROCESSOR
     juce::ScopedJuceInitialiser_GUI init;
 #endif
-    auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("DrumTriggerTests");
+    auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("RedTriggerTests");
     temp.deleteRecursively();
     temp.createDirectory();
 

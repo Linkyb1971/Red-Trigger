@@ -257,7 +257,7 @@ juce::String InstrumentBuilder::describePlan (const BuildPlan& plan)
 std::unique_ptr<juce::XmlElement> InstrumentBuilder::createXml (const BuildPlan& plan, const juce::String& name,
                                                                 std::map<juce::File, juce::String>* storedNames)
 {
-    auto root = std::make_unique<juce::XmlElement> ("DrumTriggerInstrument");
+    auto root = std::make_unique<juce::XmlElement> ("RedTriggerInstrument");
     root->setAttribute ("name", name);
     root->setAttribute ("version", 1);
 

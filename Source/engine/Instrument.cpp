@@ -93,7 +93,7 @@ Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
         const int xmlIndex = zip->getIndexOfFileName ("instrument.xml", true);
         if (xmlIndex < 0)
         {
-            error = "Not a DrumTrigger instrument (no instrument.xml inside): " + file.getFileName();
+            error = "Not a Red Trigger instrument (no instrument.xml inside): " + file.getFileName();
             return nullptr;
         }
 
@@ -145,7 +145,7 @@ Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
 
 Instrument::Ptr Instrument::loadFromXml (const juce::XmlElement& xml, const StreamOpener& opener, juce::String& error)
 {
-    if (! xml.hasTagName ("DrumTriggerInstrument"))
+    if (! xml.hasTagName ("RedTriggerInstrument"))
     {
         error = "Unexpected XML root <" + xml.getTagName() + ">";
         return nullptr;
@@ -234,7 +234,7 @@ Instrument::Ptr Instrument::loadFromXml (const juce::XmlElement& xml, const Stre
 juce::File getDefaultInstrumentFolder()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userMusicDirectory)
-                   .getChildFile ("DrumTrigger").getChildFile ("Instruments");
+                   .getChildFile ("Red Trigger").getChildFile ("Instruments");
     dir.createDirectory();
     return dir;
 }
