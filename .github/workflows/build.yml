@@ -1,0 +1,101 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+          - name: Windows
+            os: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Test
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            build/RedTriggerTests_artefacts/Release/RedTriggerTests.exe
+          else
+            build/RedTriggerTests_artefacts/Release/RedTriggerTests
+          fi
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          OUT=build/RedTrigger_artefacts/Release
+          PKG="dist/Red Trigger"
+          mkdir -p "$PKG/AU" "$PKG/VST3" "$PKG/Standalone"
+          cp -R "$OUT/AU/Red Trigger.component" "$PKG/AU/"
+          cp -R "$OUT/VST3/Red Trigger.vst3" "$PKG/VST3/"
+          cp -R "$OUT/Standalone/Red Trigger.app" "$PKG/Standalone/"
+          # ad-hoc sign so Apple Silicon will load the bundles
+          codesign --force --deep -s - "$PKG/AU/Red Trigger.component" "$PKG/VST3/Red Trigger.vst3" "$PKG/Standalone/Red Trigger.app"
+          cp "packaging/mac/Install Red Trigger.command" packaging/mac/INSTALL.txt "$PKG/"
+          lipo -info "$PKG/AU/Red Trigger.component/Contents/MacOS/Red Trigger"
+          cd dist && ditto -c -k --sequesterRsrc --keepParent "Red Trigger" RedTrigger-macOS.zip
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          OUT=build/RedTrigger_artefacts/Release
+          PKG="dist/Red Trigger"
+          mkdir -p "$PKG"
+          cp -R "$OUT/VST3/Red Trigger.vst3" "$PKG/"
+          cp "$OUT/Standalone/Red Trigger.exe" "$PKG/"
+          cp packaging/windows/INSTALL.txt "$PKG/"
+          cd dist && 7z a RedTrigger-Windows.zip "Red Trigger"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RedTrigger-${{ matrix.name }}
+          path: dist/*.zip
+
+  release:
+    name: Publish "latest" release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Replace the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest dist/*.zip \
+            --target "$GITHUB_SHA" \
+            --title "Red Trigger (latest build)" \
+            --notes "Automatic build of commit ${GITHUB_SHA::7}.
+
+          **macOS** (Apple Silicon + Intel, AU / VST3 / Standalone): download RedTrigger-macOS.zip, unzip, right-click *Install Red Trigger.command* → Open.
+          **Windows** (VST3 / Standalone): download RedTrigger-Windows.zip and see INSTALL.txt."

@@ -1,0 +1,11 @@
+Red Trigger for Windows (64-bit)
+
+  Copy the "Red Trigger.vst3" folder to  C:\Program Files\Common Files\VST3\
+  Restart your DAW and rescan plugins.
+
+  "Red Trigger.exe" is a standalone version you can run directly.
+
+FIRST USE
+  Red Trigger ships without sounds. Open the plugin, click "Instrument Builder",
+  drop in a folder of drum one-shots and click "Save Instrument...".
+  Instruments are stored in Documents\Music\Red Trigger\Instruments (your Music folder).

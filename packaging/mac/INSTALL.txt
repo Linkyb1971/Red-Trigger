@@ -1,0 +1,18 @@
+Red Trigger for macOS (Apple Silicon + Intel)
+
+EASY INSTALL
+  1. Right-click "Install Red Trigger.command" and choose Open.
+     (Right-click is needed the first time because the script isn't signed by Apple.
+      If macOS still refuses: System Settings > Privacy & Security > "Open Anyway".)
+  2. Restart your DAW.
+
+MANUAL INSTALL
+  Copy  AU/Red Trigger.component  to  ~/Library/Audio/Plug-Ins/Components/
+  Copy  VST3/Red Trigger.vst3     to  ~/Library/Audio/Plug-Ins/VST3/
+  Then in Terminal:
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"Red Trigger.component" ~/Library/Audio/Plug-Ins/VST3/"Red Trigger.vst3"
+
+FIRST USE
+  Red Trigger ships without sounds. Open the plugin, click "Instrument Builder",
+  drop in a folder of drum one-shots and click "Save Instrument...".
+  Instruments are stored in ~/Music/Red Trigger/Instruments/

@@ -7,6 +7,13 @@ the result with the original track.
 
 ![screenshot](docs/screenshot.png)
 
+## Download
+
+Ready-to-install builds for macOS (AU / VST3 / Standalone, Apple Silicon + Intel) and
+Windows (VST3 / Standalone) are produced automatically by GitHub Actions on every push and
+published on the [Releases page](../../releases/tag/latest). On macOS, unzip and right-click
+**Install Red Trigger.command → Open**.
+
 ## Building
 
 Requirements: CMake ≥ 3.22, a C++17 compiler (Xcode on macOS, Visual Studio 2022 on Windows).
