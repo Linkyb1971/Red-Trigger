@@ -5,7 +5,7 @@
 #include "dsp/Dbx160Compressor.h"
 #include "dsp/TriggerEQ.h"
 #include "engine/SampleEngine.h"
-#include "builder/InstrumentBuilder.h"
+#include "builder/InstrumentModel.h"
 #if DT_TEST_PROCESSOR
  #include "PluginProcessor.h"
 #endif
@@ -182,82 +182,134 @@ static void writeWav (const juce::File& f, double rate, int chans, float amp, fl
     if (w != nullptr) { os.release(); w->writeFromAudioSampleBuffer (b, 0, len); }
 }
 
-/** Builds a test kit: 4 velocities x 3 round robins, direct (44.1k mono) + OH (48k stereo), room in sub-folder. */
+/** Test kit: 4 velocities x 3 round robins, recorded on Top (SM57 + MD421), Bottom (SM57) and OH.
+    Mixes folder-based and filename-based mic naming, mono/stereo and 44.1k/48k. */
 static juce::File makeTestKit (const juce::File& dir)
 {
     dir.deleteRecursively();
-    dir.createDirectory();
-    dir.getChildFile ("Room").createDirectory();
+    for (auto sub : { "Top/SM57", "Top/MD421", "Bottom", "OH" })
+        dir.getChildFile (sub).createDirectory();
+
     for (int v = 1; v <= 4; ++v)
         for (int rr = 1; rr <= 3; ++rr)
         {
             const float amp = 0.15f * (float) v + 0.01f * (float) rr;
             const auto base = "Snare_v" + juce::String (v) + "_rr" + juce::String (rr);
-            writeWav (dir.getChildFile (base + ".wav"), 44100.0, 1, amp, 200.0f, 80.0f);
-            writeWav (dir.getChildFile (base + "_OH.wav"), 48000.0, 2, amp * 0.5f, 200.0f, 150.0f);
-            writeWav (dir.getChildFile ("Room").getChildFile (base + ".wav"), 44100.0, 2, amp * 0.3f, 200.0f, 300.0f);
+            writeWav (dir.getChildFile ("Top/SM57/" + base + ".wav"), 44100.0, 1, amp, 200.0f, 80.0f);
+            writeWav (dir.getChildFile ("Top/MD421/" + base + ".wav"), 44100.0, 1, amp * 0.8f, 200.0f, 80.0f);
+            writeWav (dir.getChildFile ("Bottom/" + base + "_SM57.wav"), 44100.0, 1, amp * 0.4f, 300.0f, 60.0f);
+            writeWav (dir.getChildFile ("OH/" + base + ".wav"), 48000.0, 2, amp * 0.5f, 200.0f, 150.0f);
         }
     return dir;
 }
 
-static Instrument::Ptr testBuilderAndLoader (const juce::File& tempRoot)
+static int channelIndex (const std::vector<ChannelDef>& chans, const juce::String& name)
 {
-    std::cout << "InstrumentBuilder + Instrument loader\n";
+    for (int i = 0; i < (int) chans.size(); ++i)
+        if (chans[(size_t) i].name == name) return i;
+    return -1;
+}
 
-    juce::String key; int vel, rr;
-    CHECK (InstrumentBuilder::parseFilename ("Kick_V3_RR2_OH", key, vel, rr) == micOverhead && vel == 3 && rr == 2, "parse OH/v/rr");
-    CHECK (InstrumentBuilder::parseFilename ("kick v3 rr2 Room", key, vel, rr) == micRoom, "parse Room");
-    CHECK (InstrumentBuilder::parseFilename ("kick-hard-05", key, vel, rr) == micDirect && vel == -1, "parse plain");
-    juce::String k2;
-    InstrumentBuilder::parseFilename ("Kick_V3_RR2_DI", k2, vel, rr);
-    InstrumentBuilder::parseFilename ("Kick_V3_RR2_OH", key, vel, rr);
-    CHECK (key == k2, "mic variants share a hit key");
-
+static Instrument::Ptr testEditorModelAndLoader (const juce::File& tempRoot)
+{
+    std::cout << "InstrumentModel (editor) + Instrument loader\n";
     const auto kitDir = makeTestKit (tempRoot.getChildFile ("kit"));
-    InstrumentBuilder b;
-    const int added = b.addFiles ({ kitDir });
-    CHECK (added == 36, "36 files added (got " << added << ")");
 
-    auto plan = b.makePlan (InstrumentBuilder::Mode::byLoudness, 4);
-    std::cout << InstrumentBuilder::describePlan (plan);
-    CHECK (plan.layers.size() == 4, "4 layers by loudness");
-    CHECK (plan.totalHits() == 12, "12 multi-mic hits (got " << plan.totalHits() << ")");
-    bool allMics = true;
-    for (auto& l : plan.layers) for (auto& h : l.hits) for (auto& f : h.files) allMics &= f != juce::File();
-    CHECK (allMics, "every hit has direct + OH + room");
-    CHECK (plan.layers.front().velLo == 1 && plan.layers.back().velHi == 127, "velocity ranges span 1..127");
-    CHECK (plan.layers.front().hits.front().peakDb < plan.layers.back().hits.front().peakDb, "layers sorted soft->loud");
+    // ---- detection
+    InstrumentModel probe;
+    auto d = probe.detect (kitDir.getChildFile ("Top/MD421/Snare_v2_rr3.wav"), kitDir);
+    CHECK (d.channel == "Top" && d.mic == "MD421" && d.velocity == 2 && d.roundRobin == 3, "detect Top/MD421 from folders (" << d.channel << "/" << d.mic << ")");
+    d = probe.detect (kitDir.getChildFile ("Bottom/Snare_v2_rr3_SM57.wav"), kitDir);
+    CHECK (d.channel == "Bottom" && d.mic == "SM57", "detect Bottom + mic from file name (" << d.channel << "/" << d.mic << ")");
+    auto d2 = probe.detect (kitDir.getChildFile ("OH/Snare_v2_rr3.wav"), kitDir);
+    CHECK (d2.channel == "OH" && d2.key == d.key, "same strike -> same hit key (" << d2.key << " vs " << d.key << ")");
 
-    auto planF = b.makePlan (InstrumentBuilder::Mode::byFilename, 1);
-    CHECK (planF.layers.size() == 4 && planF.layers[0].hits.size() == 3, "filename mode: 4 layers x 3 rr");
+    // ---- auto import (drop the whole folder)
+    InstrumentModel model;
+    model.autoImport ({ kitDir }, InstrumentModel::Layering::byLoudness, 4);
+    const int top = channelIndex (model.channels, "Top"), bottom = channelIndex (model.channels, "Bottom"), oh = channelIndex (model.channels, "OH");
+    CHECK (model.channels.size() == 3 && top >= 0 && bottom >= 0 && oh >= 0, "3 channels detected");
+    CHECK (top >= 0 && model.channels[(size_t) top].mics.size() == 2, "Top has 2 mics");
+    CHECK (model.numColumns() == 4, "4 mic columns");
+    CHECK (model.layers.size() == 4 && model.totalHits() == 12, "4 layers x 3 RR (" << (int) model.layers.size() << " layers, " << model.totalHits() << " hits)");
+    bool complete = true;
+    for (auto& l : model.layers) for (auto& h : l.hits) for (auto& c : h.files) for (auto& f : c) complete &= f != juce::File();
+    CHECK (complete, "every hit has all 4 mics");
+    if (top < 0 || bottom < 0) return nullptr;
+    const int sm57 = model.channels[(size_t) top].mics.indexOf ("SM57");
+    const int md421 = model.channels[(size_t) top].mics.indexOf ("MD421");
+    // strike alignment: RR k of SM57 and MD421 are the same strike
+    bool aligned = true;
+    for (auto& l : model.layers)
+        for (auto& h : l.hits)
+            aligned &= h.files[(size_t) top][(size_t) sm57].getFileName() == h.files[(size_t) top][(size_t) md421].getFileName();
+    CHECK (aligned, "round robins aligned across mics");
 
+    InstrumentModel byName;
+    byName.autoImport ({ kitDir }, InstrumentModel::Layering::byFilename, 1);
+    CHECK (byName.layers.size() == 4 && byName.layers[0].hits.size() == 3, "v#/rr# layering: 4 x 3");
+
+    // ---- cell editing
+    auto cell = model.cellFiles (0, top, sm57);
+    CHECK (cell.size() == 3, "cell has 3 RR");
+    model.moveInCell (0, top, sm57, 0, 1);
+    CHECK (model.cellFiles (0, top, sm57)[1] == cell[0], "move round robin down");
+    model.moveInCell (0, top, sm57, 1, -1);
+    model.removeFromCell (0, top, sm57, 2);
+    CHECK (model.cellCount (0, top, sm57) == 2 && model.cellCount (0, top, md421) == 3, "remove RR from one mic only");
+    model.addToCell (0, top, sm57, { cell[2] });
+    CHECK (model.cellCount (0, top, sm57) == 3, "re-add by dropping on cell");
+
+    // ---- drop on a column header (fresh model, files spread over layers by loudness)
+    InstrumentModel colModel;
+    colModel.findOrAddMic (colModel.findOrAddChannel ("Kick In"), "D112");
+    colModel.importToColumn (0, 0, { kitDir.getChildFile ("Top/SM57") }, InstrumentModel::Layering::byLoudness, 3);
+    CHECK (colModel.layers.size() == 3 && colModel.totalHits() == 12, "column drop spreads 12 hits over 3 layers");
+
+    // ---- drop on a layer header
+    InstrumentModel layerModel;
+    layerModel.addLayer();
+    layerModel.importToLayer (0, { kitDir.getChildFile ("Top/SM57/Snare_v4_rr1.wav"), kitDir.getChildFile ("Top/MD421/Snare_v4_rr1.wav") });
+    CHECK (layerModel.layers[0].hits.size() == 1 && layerModel.numColumns() == 2, "layer drop: one hit, two mics");
+
+    // ---- save, load, re-open
+    model.name = "Test Snare";
     const auto dtz = tempRoot.getChildFile ("Test Snare.dtz");
     juce::String err;
-    CHECK (InstrumentBuilder::writePackage (plan, "Test Snare", dtz, err), "writePackage: " << err);
+    CHECK (model.writePackage (dtz, err), "writePackage: " << err);
 
     auto inst = Instrument::load (dtz, err);
     CHECK (inst != nullptr, "load .dtz: " << err);
     if (inst == nullptr) return nullptr;
-    CHECK (inst->name == "Test Snare", "name");
+    CHECK (inst->name == "Test Snare" && inst->numChannels() == 3 && inst->numSlots == 4, "loaded channels/slots");
     CHECK (inst->layers.size() == 4 && inst->totalHits() == 12, "loaded layer/hit counts");
-    CHECK (inst->micPresent[0] && inst->micPresent[1] && inst->micPresent[2], "all mics present");
-    const auto& h = inst->layers[0].hits[0];
-    CHECK (h.mic[micOverhead].getNumChannels() == 2 && h.mic[micDirect].getNumChannels() == 1, "channel counts kept");
-    CHECK_NEAR (h.mic[micOverhead].getNumSamples(), h.mic[micDirect].getNumSamples(), 3, "48k OH resampled to 44.1k");
+    const int itop = channelIndex (inst->channels, "Top"), ioh = channelIndex (inst->channels, "OH");
+    const auto& h0 = inst->layers[0].hits[0];
+    CHECK (h0.slots[(size_t) inst->slotIndex (ioh, 0)].getNumChannels() == 2, "OH stays stereo");
+    CHECK_NEAR (h0.slots[(size_t) inst->slotIndex (ioh, 0)].getNumSamples(), h0.slots[(size_t) inst->slotIndex (itop, 0)].getNumSamples(), 3, "48k OH resampled to 44.1k");
 
-    // bare XML variant with relative paths
-    auto xml = InstrumentBuilder::createXml (plan, "Loose");
-    juce::String xmlText = xml->toString();
-    // point the generated "samples/x.wav" paths at real files by writing the xml next to a samples folder copy
-    auto looseDir = tempRoot.getChildFile ("loose");
-    looseDir.deleteRecursively();
-    looseDir.getChildFile ("samples").createDirectory();
-    std::map<juce::File, juce::String> names;
-    InstrumentBuilder::createXml (plan, "Loose", &names);
-    for (auto& [file, stored] : names) file.copyFileTo (looseDir.getChildFile (stored));
-    looseDir.getChildFile ("instrument.xml").replaceWithText (xmlText);
-    auto loose = Instrument::load (looseDir.getChildFile ("instrument.xml"), err);
-    CHECK (loose != nullptr && loose->totalHits() == 12, "load loose instrument.xml");
+    InstrumentModel reopened;
+    CHECK (reopened.loadFromFile (dtz, tempRoot.getChildFile ("cache"), err), "re-open .dtz in editor: " << err);
+    CHECK (reopened.channels.size() == 3 && reopened.totalHits() == 12 && reopened.name == "Test Snare", "re-opened model matches");
+    CHECK (reopened.cellFiles (0, top, sm57).getFirst().existsAsFile(), "re-opened samples unpacked");
+
+    // ---- remove a mic / channel
+    reopened.removeMic (top, md421);
+    CHECK (reopened.numColumns() == 3 && reopened.totalHits() == 12, "remove mic keeps hits");
+    reopened.removeChannel (channelIndex (reopened.channels, "Bottom"));
+    CHECK (reopened.channels.size() == 2, "remove channel");
+
+    // ---- version 1 instruments (direct/overhead/room) still load
+    auto v1Dir = tempRoot.getChildFile ("v1");
+    v1Dir.createDirectory();
+    kitDir.getChildFile ("Top/SM57/Snare_v1_rr1.wav").copyFileTo (v1Dir.getChildFile ("d.wav"));
+    kitDir.getChildFile ("OH/Snare_v1_rr1.wav").copyFileTo (v1Dir.getChildFile ("o.wav"));
+    v1Dir.getChildFile ("instrument.xml").replaceWithText (
+        "<DrumTriggerInstrument name=\"Old\" version=\"1\"><Layer velLo=\"1\" velHi=\"127\">"
+        "<Hit direct=\"d.wav\" overhead=\"o.wav\"/></Layer></DrumTriggerInstrument>");
+    auto old = Instrument::load (v1Dir.getChildFile ("instrument.xml"), err);
+    CHECK (old != nullptr && old->numChannels() == 2 && old->channels[0].name == "Direct" && old->channels[1].name == "OH",
+           "v1 instrument loads as Direct + OH channels");
 
     CHECK (inst->findLayer (1) == 0 && inst->findLayer (127) == 3 && inst->findLayer (64) == 2, "findLayer");
     return inst;
@@ -271,24 +323,43 @@ static void testEngine (Instrument::Ptr inst)
     SampleEngine e;
     e.prepare (fs);
     e.setInstrument (inst);
-    SampleEngine::Settings s;
-    s.micGain = { 1.0f, 0.0f, 0.0f };
+    const int top = channelIndex (inst->channels, "Top");
+    const int sm57 = inst->channels[(size_t) top].mics.indexOf ("SM57");
+    const int md421 = inst->channels[(size_t) top].mics.indexOf ("MD421");
 
-    auto renderPeak = [&] (int vel)
+    // only the Top channel audible
+    SampleEngine::Settings s;
+    for (auto& ch : s.channels) ch.gainL = ch.gainR = 0.0f;
+    s.channels[(size_t) top] = { sm57, 1.0f, 1.0f };
+
+    auto renderPeak = [&] (int vel, int channel = 0)
     {
         juce::AudioBuffer<float> out (2, 4096);
         out.clear();
         e.trigger (vel, 1.0f, s);
         e.render (out, 0, 4096, s);
         e.stopAll();
-        return out.getMagnitude (0, 0, 4096);
+        return out.getMagnitude (channel, 0, 4096);
     };
 
-    // Layer 1 hits: amps 0.16, 0.17, 0.18 (cycled), layer 4: 0.61..0.63
+    // Layer 1 hits: amps 0.16, 0.17, 0.18 (cycled)
     const float a = renderPeak (10), b = renderPeak (10), c = renderPeak (10), d = renderPeak (10);
     std::cout << "    layer-1 round robin peaks: " << a << " " << b << " " << c << " " << d << "\n";
     CHECK (std::abs (a - b) > 1e-4f && std::abs (b - c) > 1e-4f && std::abs (a - d) < 1e-6f, "round robin cycles through 3 hits");
     CHECK (renderPeak (127) > 0.55f && a < 0.2f, "velocity picks layer");
+
+    // switch the Top mic: same strike, MD421 recorded 0.8x as loud
+    renderPeak (10); renderPeak (10);   // advance RR back to hit 1
+    const float viaSm57 = renderPeak (10);
+    s.channels[(size_t) top].mic = md421;
+    renderPeak (10); renderPeak (10);
+    const float viaMd421 = renderPeak (10);
+    CHECK_NEAR (viaMd421 / viaSm57, 0.8, 0.02, "mic selector switches to the other mic of the same strike");
+
+    // pan hard left
+    s.channels[(size_t) top] = { sm57, 1.0f, 0.0f };
+    CHECK (renderPeak (64, 1) < 1e-6f && renderPeak (64, 0) > 0.1f, "pan / per-channel L/R gains");
+    s.channels[(size_t) top] = { sm57, 1.0f, 1.0f };
 
     // pitch +12 halves the length
     juce::AudioBuffer<float> out (2, 30000);
@@ -373,6 +444,16 @@ static void testProcessor (const juce::File& dtz)
     CHECK_NEAR (proc2.apvts.getRawParameterValue (dt::pid::threshold)->load(), -30.0, 0.05, "threshold restored");
     CHECK (proc2.getInstrumentFile() == dtz && proc2.getLoadedInstrument() != nullptr, "instrument restored from state");
 
+    // mic channel parameters are automatable and saved with the session
+    set (dt::chMic (2).toRawUTF8(), 1.0f);
+    set (dt::chPan (0).toRawUTF8(), -0.5f);
+    juce::MemoryBlock state2;
+    proc.getStateInformation (state2);
+    RedTriggerProcessor proc3;
+    proc3.setStateInformation (state2.getData(), (int) state2.getSize());
+    CHECK (juce::roundToInt (proc3.apvts.getRawParameterValue (dt::chMic (2))->load()) == 1
+           && std::abs (proc3.apvts.getRawParameterValue (dt::chPan (0))->load() + 0.5f) < 0.01f, "mic selection / pan restored");
+
     // Dry-only blend reproduces input delayed by W
     set (dt::pid::blend, 0.0f);
     juce::AudioBuffer<float> buf (2, 512);
@@ -411,11 +492,22 @@ static void snapshotEditor (const juce::File& dtz, const juce::File& png)
         for (auto* c : e->getChildren())
             if (auto* d = dynamic_cast<dt::ui::DetectorDisplay*> (c)) d->tick();
 
-    auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f);
-    png.deleteFile();
-    juce::FileOutputStream os (png);
-    juce::PNGImageFormat().writeImageToStream (img, os);
-    std::cout << "Snapshot written: " << png.getFullPathName() << "\n";
+    auto write = [&] (const juce::File& file)
+    {
+        auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f);
+        file.deleteFile();
+        juce::FileOutputStream os (file);
+        juce::PNGImageFormat().writeImageToStream (img, os);
+        std::cout << "Snapshot written: " << file.getFullPathName() << "\n";
+    };
+    write (png);
+
+    if (auto* e = dynamic_cast<RedTriggerEditor*> (ed.get()))
+    {
+        e->setEditorPageVisible (true);
+        e->getEditorPage().importFiles ({ dtz.getSiblingFile ("kit") });
+        write (png.getSiblingFile (png.getFileNameWithoutExtension() + "-editor.png"));
+    }
 }
 #endif
 
@@ -431,7 +523,7 @@ int main (int argc, char** argv)
     testBiquad();
     testDetector();
     testCompressor();
-    auto inst = testBuilderAndLoader (temp);
+    auto inst = testEditorModelAndLoader (temp);
     testEngine (inst);
 #if DT_TEST_PROCESSOR
     testProcessor (temp.getChildFile ("Test Snare.dtz"));

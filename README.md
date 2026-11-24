@@ -7,6 +7,8 @@ the result with the original track.
 
 ![screenshot](docs/screenshot.png)
 
+![instrument editor](docs/screenshot-editor.png)
+
 ## Download
 
 Ready-to-install macOS builds (AU / VST3 / Standalone, Apple Silicon + Intel) are produced automatically by GitHub Actions on every push and
@@ -78,11 +80,17 @@ input ─┬─► detection filters (HPF/LPF) ─► transient detector ─► 
 **Sample**
 - **Dynamics**: 100% follows the input dynamics; 0% makes every hit full velocity.
 - **Pitch** (±12 st), **Length** (fades the sample out early), **Offset** (delays the trigger by up to 20 ms).
-- **Direct / Overhead / Room**: mic mixer for multi-mic instruments. Knobs for mics the instrument
-  doesn't have are dimmed.
 - **Round Robin**: Cycle, or Random (never repeats the same hit twice in a row).
 - **Choke**: each new hit cuts off the previous one (3 ms fade).
 - **Invert**: flips the trigger's polarity. Use it to fix phase against the dry track.
+
+**Mic Mixer**: one strip per mic channel in the loaded instrument (e.g. Top, Bottom, OH, Room).
+Each strip has:
+- **Mic**: which microphone to use at that position, e.g. SM57 or MD421 on the snare top. Every mic
+  at a position was recorded on the same strikes, so switching mics changes the tone, not the performance.
+- **Level**, **Pan** and **Mute**.
+
+All strip controls are automatable host parameters (`Ch 1 Mic`, `Ch 1 Level`, …) and are saved with the session.
 
 **Compressor (dbx 160 style)**: true-RMS detection with program-dependent attack (measured at
 ~17 / 6.5 / 3.8 ms for 10 / 20 / 30 dB over threshold, vs the hardware's spec of 15 / 5 / 3 ms)
@@ -93,44 +101,72 @@ and a constant 120 dB/s release. The ratio goes 1:1 → ∞:1 → -1:1 like the 
 
 ## Trigger instruments (.dtz)
 
-### Building one in the plugin
-1. Click **Instrument Builder**.
-2. Drop a folder of one-shots (WAV/AIFF/FLAC) onto the page, or use Add Files / Add Folder.
-3. Choose the layering mode:
-   - **Sort by loudness**: every hit is measured, sorted by peak level, and split into the number of
-     velocity layers you choose. The hits within a layer become round robins. You just need
-     a folder of hits played at different strengths.
-   - **From filenames**: `v1`, `v2`… (or `vel1`) pick the layer and `rr1`, `rr2`… the round-robin order.
-4. Name it and click **Save Instrument…**. It's saved to `~/Music/Red Trigger/Instruments/`
-   and loaded right away. Everything in that folder (including subfolders) shows up in the
-   instrument menu.
+### Instrument Editor
+Click **Instrument Editor**. The editor is a grid: **rows are velocity layers**, **columns are microphones**,
+grouped under their mic position (channel). Each cell holds that layer's round robins for that mic.
 
-**Multi-mic hits**: files with the same name apart from a mic token are combined into one hit:
-`_OH` / `_Overhead` → Overhead, `_Room` / `_Amb` → Room, `_DI` / `_Close` / no token → Direct.
-Subfolders named `OH` or `Room` also work (`Snare/Room/snare_v3_rr1.wav`). Samples can be mono or stereo,
-and mics can have different sample rates (they're resampled when the instrument loads).
+Drag & drop anywhere:
+| Drop on… | What happens |
+|---|---|
+| the empty grid / below the rows | **Auto-import**: channels, mics, velocity layers and round robins are all detected |
+| a **mic column header** | the files are spread over the layers of that mic (by loudness or `v#` tags) |
+| a **layer** (row header) | the files go into that layer; each file's channel/mic is detected |
+| a **cell** | the files are added as round robins of that layer + mic |
+
+Other controls:
+- Right-click a column header to rename a channel or mic, add another mic to a position, or remove one.
+- **+ Channel** adds a position. **+ Layer** / **- Layer**, **Even Velocities** and **Sort by Loudness**
+  edit the layers. You can type a selected layer's velocity range in the side panel.
+- Click a cell to list its samples. **Play** (or double-click) auditions a sample, and **Up/Down/Remove**
+  reorder or delete round robins.
+- **Open…** / **Edit Loaded** re-open a saved instrument for editing.
+- **Save Instrument…** writes a single `.dtz` to `~/Music/Red Trigger/Instruments/` and loads it.
+
+Auditioning plays through the plugin's output, so the host has to be processing the track. Some DAWs
+(Logic, for example) only do that while the track is selected or record-armed.
+
+**How auto-import reads names.** Folder names (below the folder you dropped) and file names are split into words:
+- **Mic positions**: `Top`, `Bottom`/`Btm`, `OH`/`Overhead`, `Room`/`Amb`, `In`, `Out`, `Sub`, `DI`/`Close`,
+  plus any channel names you've already created in the editor.
+- **Mic models**: `SM57`, `57`, `MD421`, `421`, `C414`, `D112`, `Beta91`, `U47`, `U87`, `KM184`, `R121`, `e906`…,
+  plus any mic names you've already created.
+- `v1`, `v2`… pick velocity layers in "By v#/rr# tags" mode, and `rr1`, `rr2`… set the round-robin order.
+- Files that differ only by position/mic words are the **same strike**, so they line up on the same round robin.
+
+Example layout that imports cleanly:
+```
+Snare/
+  Top/SM57/snare_v1_rr1.wav     Top/MD421/snare_v1_rr1.wav
+  Bottom/snare_v1_rr1_SM57.wav  OH/snare_v1_rr1.wav  Room/snare_v1_rr1.wav
+```
 
 ### File format
 A `.dtz` is an ordinary zip file containing `instrument.xml` and a `samples/` folder:
 
 ```xml
-<RedTriggerInstrument name="Snare A" version="1">
+<RedTriggerInstrument name="Snare A" version="2">
+  <Channel name="Top"><Mic name="SM57"/><Mic name="MD421"/></Channel>
+  <Channel name="Bottom"><Mic name="SM57"/></Channel>
+  <Channel name="OH"><Mic name="C414"/></Channel>
   <Layer velLo="1" velHi="42">
-    <Hit direct="samples/snare_v1_rr1.wav" overhead="samples/snare_v1_rr1_OH.wav" room="samples/snare_v1_rr1_Room.wav"/>
-    <Hit direct="samples/snare_v1_rr2.wav" overhead="..." room="..."/>
+    <Hit peakDb="-14.2">
+      <Sample channel="0" mic="0" file="samples/snare_top_sm57_v1_rr1.wav"/>
+      <Sample channel="0" mic="1" file="samples/snare_top_md421_v1_rr1.wav"/>
+      <Sample channel="1" mic="0" file="samples/snare_bottom_v1_rr1.wav"/>
+      <Sample channel="2" mic="0" file="samples/snare_oh_v1_rr1.wav"/>
+    </Hit>
   </Layer>
-  <Layer velLo="43" velHi="127"> ... </Layer>
 </RedTriggerInstrument>
 ```
 
-You can unzip it, adjust velocity ranges by hand, and zip it back up. You can also load a bare
-`instrument.xml` directly (sample paths are relative to the XML file).
-Sessions store the instrument's path. If the file has moved, the plugin looks for the same file name
-in the instruments folder.
+Limits: up to 8 channels, 8 mics per channel, and 127 layers. Older version-1 `.dtz` files
+(fixed Direct/OH/Room) still load. You can also load a bare `instrument.xml` (sample paths are relative
+to it). Sessions store the instrument's path. If the file has moved, the plugin looks for the same file
+name in the instruments folder.
 
 ## Source layout
 - `Source/dsp/` – `TransientDetector`, `Dbx160Compressor`, `TriggerEQ`, `Biquad` (header-only, no allocation in the audio thread)
 - `Source/engine/` – `Instrument` (model + .dtz/.xml loader), `SampleEngine` (32-voice player, cubic interpolation)
-- `Source/builder/` – `InstrumentBuilder` (filename parsing, loudness analysis, layering, .dtz writer)
-- `Source/ui/` – look and feel, widgets, detector display, builder page
+- `Source/builder/` – `InstrumentModel` (editor model: channel/mic detection, layering, cell editing, .dtz read/write)
+- `Source/ui/` – look and feel, widgets, detector display, mic mixer, instrument editor page
 - `tests/Tests.cpp` – headless tests for the DSP, builder round-trip, engine, and the full processor (alignment, state)

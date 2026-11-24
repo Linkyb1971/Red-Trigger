@@ -66,6 +66,10 @@ public:
     bool loadInstrument (const juce::File& file, juce::String& errorOrWarning);
     dt::Instrument::Ptr getLoadedInstrument() const { return loadedInstrument; }
     juce::File getInstrumentFile() const { return instrumentFile; }
+
+    /** Message thread: plays an audio file through the output (Instrument Editor audition). */
+    void previewFile (const juce::File& file);
+    void stopPreview() { previewFile ({}); }
     juce::String getLastLoadError() const { return lastLoadError; }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -78,6 +82,7 @@ public:
 
 private:
     void timerCallback() override;
+    void renderPreview (juce::AudioBuffer<float>& buffer, int numOut, int n) noexcept;
     float param (const char* id) const { return apvts.getRawParameterValue (id)->load(); }
 
     // DSP
@@ -106,6 +111,21 @@ private:
     dt::Instrument::Ptr loadedInstrument;
     juce::File instrumentFile;
     juce::String lastLoadError;
+
+    std::array<std::atomic<float>*, dt::maxChannels> chMicParams {}, chLevelParams {}, chPanParams {}, chMuteParams {};
+
+    // Editor audition
+    struct PreviewSample : juce::ReferenceCountedObject
+    {
+        using Ptr = juce::ReferenceCountedObjectPtr<PreviewSample>;
+        juce::AudioBuffer<float> buffer;
+        double sampleRate = 44100.0;
+    };
+    juce::SpinLock previewLock;
+    PreviewSample::Ptr pendingPreview, activePreview;
+    std::atomic<bool> hasPendingPreview { false };
+    double previewPos = 0.0;
+    juce::ReferenceCountedArray<PreviewSample> previewGraveyard;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (RedTriggerProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RedTriggerProcessor)

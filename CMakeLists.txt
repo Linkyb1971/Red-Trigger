@@ -47,14 +47,14 @@ juce_add_plugin(RedTrigger
 
 set(DT_CORE_SOURCES
     Source/engine/Instrument.cpp
-    Source/builder/InstrumentBuilder.cpp)
+    Source/builder/InstrumentModel.cpp)
 
 target_sources(RedTrigger PRIVATE
     ${DT_CORE_SOURCES}
     Source/Params.cpp
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
-    Source/ui/BuilderPanel.cpp)
+    Source/ui/EditorPanel.cpp)
 
 target_include_directories(RedTrigger PRIVATE Source)
 
@@ -77,7 +77,7 @@ if(REDTRIGGER_BUILD_TESTS)
     juce_add_console_app(RedTriggerTests PRODUCT_NAME "RedTriggerTests")
     # The tests also compile the processor/editor so the full signal path can be exercised headless.
     target_sources(RedTriggerTests PRIVATE tests/Tests.cpp ${DT_CORE_SOURCES}
-        Source/Params.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/ui/BuilderPanel.cpp)
+        Source/Params.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/ui/EditorPanel.cpp)
     target_include_directories(RedTriggerTests PRIVATE Source)
     target_compile_definitions(RedTriggerTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 DT_TEST_PROCESSOR=1)
     target_link_libraries(RedTriggerTests

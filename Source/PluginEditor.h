@@ -2,7 +2,8 @@
 #include "PluginProcessor.h"
 #include "ui/Widgets.h"
 #include "ui/DetectorDisplay.h"
-#include "ui/BuilderPanel.h"
+#include "ui/EditorPanel.h"
+#include "ui/MicMixer.h"
 
 class RedTriggerEditor : public juce::AudioProcessorEditor,
                           private juce::Timer,
@@ -23,23 +24,32 @@ private:
     void showBuilder (bool show);
     void loadFile (const juce::File& f);
 
+public:
+    /** For tests / screenshots. */
+    void setEditorPageVisible (bool show) { showBuilder (show); }
+    dt::ui::EditorPanel& getEditorPage() { return builder; }
+
+private:
+
     RedTriggerProcessor& proc;
     dt::ui::LookAndFeel lnf;
 
     // header
     juce::ComboBox instrumentBox;
-    juce::TextButton loadButton { "Load..." }, folderButton { "Folder" }, builderButton { "Instrument Builder" };
+    juce::TextButton loadButton { "Load..." }, folderButton { "Folder" }, builderButton { "Instrument Editor" };
     juce::Label infoLabel, velocityLabel;
     juce::Array<juce::File> instrumentFiles;
     std::unique_ptr<juce::FileChooser> chooser;
     float ledLevel = 0.0f;
     int lastHitCount = 0;
+    const void* shownInstrument = nullptr;
 
     // panels
     dt::ui::Panel detectPanel { "DETECTION" }, samplePanel { "SAMPLE" }, eqPanel { "TRIGGER EQ" },
-                  compPanel { "COMPRESSOR", "dbx 160 style" }, outPanel { "MIX" };
+                  compPanel { "COMPRESSOR", "dbx 160 style" }, outPanel { "MIX" }, micPanel { "MIC MIXER" };
     dt::ui::DetectorDisplay display { proc };
-    dt::ui::BuilderPanel builder;
+    dt::ui::EditorPanel builder { proc };
+    dt::ui::MicMixer micMixer { proc };
 
     using Knob = dt::ui::Knob;
     using Toggle = dt::ui::Toggle;

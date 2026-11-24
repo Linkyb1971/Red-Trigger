@@ -17,9 +17,6 @@ inline constexpr auto dynamics    = "smp_dynamics";
 inline constexpr auto pitch       = "smp_pitch";
 inline constexpr auto length      = "smp_length";
 inline constexpr auto offset      = "smp_offset";
-inline constexpr auto micDirect   = "smp_direct";
-inline constexpr auto micOverhead = "smp_overhead";
-inline constexpr auto micRoom     = "smp_room";
 inline constexpr auto rrMode      = "smp_rrmode";
 inline constexpr auto choke       = "smp_choke";
 inline constexpr auto polarity    = "trig_polarity";
@@ -49,6 +46,12 @@ inline constexpr auto outGain     = "out_gain";
 
 namespace dt
 {
+/** Per mic-channel parameters (channel index 0..maxChannels-1). */
+inline juce::String chMic (int c)   { return "ch" + juce::String (c + 1) + "_mic"; }
+inline juce::String chLevel (int c) { return "ch" + juce::String (c + 1) + "_level"; }
+inline juce::String chPan (int c)   { return "ch" + juce::String (c + 1) + "_pan"; }
+inline juce::String chMute (int c)  { return "ch" + juce::String (c + 1) + "_mute"; }
+
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 juce::String ratioToText (float slope);
 }

@@ -45,6 +45,149 @@ namespace
     }
 }
 
+//==============================================================================
+bool InstrumentDescription::fromXml (const juce::XmlElement& xml, InstrumentDescription& out, juce::String& error)
+{
+    if (! xml.hasTagName ("RedTriggerInstrument") && ! xml.hasTagName ("DrumTriggerInstrument"))
+    {
+        error = "Unexpected XML root <" + xml.getTagName() + ">";
+        return false;
+    }
+
+    out = {};
+    out.name = xml.getStringAttribute ("name");
+    const int version = xml.getIntAttribute ("version", 1);
+
+    auto readVel = [] (const juce::XmlElement& l, InstrumentDescription::DLayer& layer)
+    {
+        if (l.hasAttribute ("velLo")) layer.velLo = juce::jlimit (1, 127, l.getIntAttribute ("velLo"));
+        if (l.hasAttribute ("velHi")) layer.velHi = juce::jlimit (1, 127, l.getIntAttribute ("velHi"));
+    };
+
+    if (version >= 2 || xml.getChildByName ("Channel") != nullptr)
+    {
+        for (auto* c : xml.getChildWithTagNameIterator ("Channel"))
+        {
+            if ((int) out.channels.size() >= maxChannels)
+                break;
+            ChannelDef def;
+            def.name = c->getStringAttribute ("name", "Channel " + juce::String ((int) out.channels.size() + 1));
+            for (auto* m : c->getChildWithTagNameIterator ("Mic"))
+                if (def.mics.size() < maxMicsPerChannel)
+                    def.mics.add (m->getStringAttribute ("name", "Mic " + juce::String (def.mics.size() + 1)));
+            if (def.mics.isEmpty())
+                def.mics.add ("Default");
+            out.channels.push_back (def);
+        }
+
+        for (auto* l : xml.getChildWithTagNameIterator ("Layer"))
+        {
+            DLayer layer;
+            readVel (*l, layer);
+            for (auto* h : l->getChildWithTagNameIterator ("Hit"))
+            {
+                DHit hit;
+                hit.peakDb = (float) h->getDoubleAttribute ("peakDb", -100.0);
+                hit.paths.resize (out.channels.size());
+                for (size_t c = 0; c < out.channels.size(); ++c)
+                    hit.paths[c].resize ((size_t) out.channels[c].mics.size());
+
+                for (auto* s : h->getChildWithTagNameIterator ("Sample"))
+                {
+                    const int c = s->getIntAttribute ("channel", -1), m = s->getIntAttribute ("mic", 0);
+                    if (c >= 0 && c < (int) out.channels.size() && m >= 0 && m < out.channels[(size_t) c].mics.size())
+                        hit.paths[(size_t) c][(size_t) m] = s->getStringAttribute ("file");
+                }
+                layer.hits.push_back (std::move (hit));
+            }
+            out.layers.push_back (std::move (layer));
+        }
+    }
+    else
+    {
+        // version 1: fixed direct / overhead / room attributes
+        static const char* attrs[] = { "direct", "overhead", "room" };
+        static const char* names[] = { "Direct", "OH", "Room" };
+        int channelFor[3] = { -1, -1, -1 };
+
+        for (auto* l : xml.getChildWithTagNameIterator ("Layer"))
+            for (auto* h : l->getChildWithTagNameIterator ("Hit"))
+                for (int k = 0; k < 3; ++k)
+                    if (h->getStringAttribute (attrs[k]).isNotEmpty() && channelFor[k] < 0)
+                        channelFor[k] = 0;
+
+        for (int k = 0; k < 3; ++k)
+            if (channelFor[k] == 0)
+            {
+                channelFor[k] = (int) out.channels.size();
+                out.channels.push_back ({ names[k], juce::StringArray { "Default" } });
+            }
+
+        for (auto* l : xml.getChildWithTagNameIterator ("Layer"))
+        {
+            DLayer layer;
+            readVel (*l, layer);
+            for (auto* h : l->getChildWithTagNameIterator ("Hit"))
+            {
+                DHit hit;
+                hit.peakDb = (float) h->getDoubleAttribute ("peakDb", -100.0);
+                hit.paths.assign (out.channels.size(), std::vector<juce::String> (1));
+                for (int k = 0; k < 3; ++k)
+                    if (channelFor[k] >= 0)
+                        hit.paths[(size_t) channelFor[k]][0] = h->getStringAttribute (attrs[k]);
+                layer.hits.push_back (std::move (hit));
+            }
+            out.layers.push_back (std::move (layer));
+        }
+    }
+
+    if (out.channels.empty())
+    {
+        error = "Instrument has no mic channels";
+        return false;
+    }
+    return true;
+}
+
+std::unique_ptr<juce::XmlElement> InstrumentDescription::toXml() const
+{
+    auto root = std::make_unique<juce::XmlElement> ("RedTriggerInstrument");
+    root->setAttribute ("name", name);
+    root->setAttribute ("version", 2);
+
+    for (auto& c : channels)
+    {
+        auto* cx = root->createNewChildElement ("Channel");
+        cx->setAttribute ("name", c.name);
+        for (auto& m : c.mics)
+            cx->createNewChildElement ("Mic")->setAttribute ("name", m);
+    }
+
+    for (auto& l : layers)
+    {
+        auto* lx = root->createNewChildElement ("Layer");
+        if (l.velLo > 0) lx->setAttribute ("velLo", l.velLo);
+        if (l.velHi > 0) lx->setAttribute ("velHi", l.velHi);
+
+        for (auto& h : l.hits)
+        {
+            auto* hx = lx->createNewChildElement ("Hit");
+            hx->setAttribute ("peakDb", juce::String (h.peakDb, 2));
+            for (size_t c = 0; c < h.paths.size(); ++c)
+                for (size_t m = 0; m < h.paths[c].size(); ++m)
+                    if (h.paths[c][m].isNotEmpty())
+                    {
+                        auto* sx = hx->createNewChildElement ("Sample");
+                        sx->setAttribute ("channel", (int) c);
+                        sx->setAttribute ("mic", (int) m);
+                        sx->setAttribute ("file", h.paths[c][m]);
+                    }
+        }
+    }
+    return root;
+}
+
+//==============================================================================
 int Instrument::findLayer (int vel) const noexcept
 {
     int best = 0, bestDist = INT_MAX;
@@ -68,15 +211,14 @@ int Instrument::totalHits() const noexcept
 
 juce::String Instrument::getSummary() const
 {
-    juce::StringArray mics;
-    if (micPresent[micDirect])   mics.add ("Direct");
-    if (micPresent[micOverhead]) mics.add ("OH");
-    if (micPresent[micRoom])     mics.add ("Room");
-    return juce::String ((int) layers.size()) + " vel layers, " + juce::String (totalHits()) + " hits  |  mics: "
-           + mics.joinIntoString ("/");
+    juce::StringArray ch;
+    for (auto& c : channels)
+        ch.add (c.name + (c.mics.size() > 1 ? " (" + juce::String (c.mics.size()) + " mics)" : juce::String()));
+    return juce::String ((int) layers.size()) + " vel layers, " + juce::String (totalHits()) + " hits  |  "
+           + ch.joinIntoString (", ");
 }
 
-Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
+std::unique_ptr<juce::XmlElement> Instrument::openPackage (const juce::File& file, StreamOpener& opener, juce::String& error)
 {
     if (! file.existsAsFile())
     {
@@ -85,7 +227,6 @@ Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
     }
 
     std::unique_ptr<juce::XmlElement> xml;
-    StreamOpener opener;
 
     if (file.hasFileExtension ("dtz") || file.hasFileExtension ("zip"))
     {
@@ -128,10 +269,16 @@ Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
     }
 
     if (xml == nullptr)
-    {
         error = "Couldn't parse instrument XML in " + file.getFileName();
+    return xml;
+}
+
+Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
+{
+    StreamOpener opener;
+    auto xml = openPackage (file, opener, error);
+    if (xml == nullptr)
         return nullptr;
-    }
 
     auto inst = loadFromXml (*xml, opener, error);
     if (inst != nullptr)
@@ -145,58 +292,64 @@ Instrument::Ptr Instrument::load (const juce::File& file, juce::String& error)
 
 Instrument::Ptr Instrument::loadFromXml (const juce::XmlElement& xml, const StreamOpener& opener, juce::String& error)
 {
-    if (! xml.hasTagName ("RedTriggerInstrument"))
-    {
-        error = "Unexpected XML root <" + xml.getTagName() + ">";
+    InstrumentDescription desc;
+    if (! InstrumentDescription::fromXml (xml, desc, error))
         return nullptr;
-    }
 
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
 
     Ptr inst = new Instrument();
-    inst->name = xml.getStringAttribute ("name");
+    inst->name = desc.name;
+    inst->channels = desc.channels;
+    for (auto& c : inst->channels)
+    {
+        inst->slotBase.push_back (inst->numSlots);
+        inst->numSlots += c.mics.size();
+    }
+
     bool anyRanges = false;
     juce::StringArray missing;
 
-    for (auto* layerXml : xml.getChildWithTagNameIterator ("Layer"))
+    for (auto& dl : desc.layers)
     {
         Layer layer;
-        if (layerXml->hasAttribute ("velLo") || layerXml->hasAttribute ("velHi"))
+        if (dl.velLo > 0 || dl.velHi > 0)
         {
             anyRanges = true;
-            layer.velLo = juce::jlimit (1, 127, layerXml->getIntAttribute ("velLo", 1));
-            layer.velHi = juce::jlimit (layer.velLo, 127, layerXml->getIntAttribute ("velHi", 127));
+            layer.velLo = dl.velLo > 0 ? dl.velLo : 1;
+            layer.velHi = juce::jmax (layer.velLo, dl.velHi > 0 ? dl.velHi : 127);
         }
 
-        for (auto* hitXml : layerXml->getChildWithTagNameIterator ("Hit"))
+        for (auto& dh : dl.hits)
         {
             Hit hit;
+            hit.slots.resize ((size_t) inst->numSlots);
+            hit.peakDb = dh.peakDb;
             bool haveRate = false;
 
-            for (int m = 0; m < numMics; ++m)
-            {
-                const auto path = hitXml->getStringAttribute (micAttributeName (m)).trim();
-                if (path.isEmpty())
-                    continue;
-
-                double rate = 0.0;
-                auto& buf = hit.mic[(size_t) m];
-                if (! readAudio (fm, opener (path), buf, rate))
+            for (int c = 0; c < (int) dh.paths.size(); ++c)
+                for (int m = 0; m < (int) dh.paths[(size_t) c].size(); ++m)
                 {
-                    missing.addIfNotAlreadyThere (path);
-                    buf.setSize (0, 0);
-                    continue;
+                    const auto& path = dh.paths[(size_t) c][(size_t) m];
+                    if (path.isEmpty())
+                        continue;
+
+                    auto& buf = hit.slots[(size_t) inst->slotIndex (c, m)];
+                    double rate = 0.0;
+                    if (! readAudio (fm, opener (path), buf, rate))
+                    {
+                        missing.addIfNotAlreadyThere (path);
+                        buf.setSize (0, 0);
+                        continue;
+                    }
+
+                    if (! haveRate) { hit.sampleRate = rate; haveRate = true; }
+                    else            resample (buf, rate, hit.sampleRate);
+
+                    hit.length = std::max (hit.length, buf.getNumSamples());
                 }
 
-                if (! haveRate) { hit.sampleRate = rate; haveRate = true; }
-                else            resample (buf, rate, hit.sampleRate);
-
-                hit.length = std::max (hit.length, buf.getNumSamples());
-                inst->micPresent[(size_t) m] = true;
-            }
-
-            hit.peakDb = (float) hitXml->getDoubleAttribute ("peakDb", -100.0);
             if (hit.length > 0)
                 layer.hits.push_back (std::move (hit));
         }
@@ -214,13 +367,11 @@ Instrument::Ptr Instrument::loadFromXml (const juce::XmlElement& xml, const Stre
 
     const int n = (int) inst->layers.size();
     if (! anyRanges)
-    {
         for (int i = 0; i < n; ++i)
         {
             inst->layers[(size_t) i].velLo = 1 + (i * 127) / n;
             inst->layers[(size_t) i].velHi = ((i + 1) * 127) / n;
         }
-    }
 
     std::stable_sort (inst->layers.begin(), inst->layers.end(),
                       [] (const Layer& a, const Layer& b) { return a.velLo < b.velLo; });

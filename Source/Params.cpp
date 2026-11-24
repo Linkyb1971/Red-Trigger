@@ -1,4 +1,5 @@
 #include "Params.h"
+#include "engine/Instrument.h"
 
 namespace dt
 {
@@ -84,12 +85,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     p.push_back (std::make_unique<P> (ID { pid::length, 1 }, "Length", skewed (10.0f, 2000.0f, 300.0f, 1.0f), 2000.0f, msAttr (1999.0f)));
     p.push_back (std::make_unique<P> (ID { pid::offset, 1 }, "Offset", juce::NormalisableRange<float> (0.0f, 20.0f, 0.01f), 0.0f,
                                       Attr().withLabel ("ms").withStringFromValueFunction ([] (float v, int) { return juce::String (v, 2) + " ms"; })));
-    p.push_back (std::make_unique<P> (ID { pid::micDirect, 1 }, "Direct", juce::NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f, dbAttr (-59.9f)));
-    p.push_back (std::make_unique<P> (ID { pid::micOverhead, 1 }, "Overhead", juce::NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f, dbAttr (-59.9f)));
-    p.push_back (std::make_unique<P> (ID { pid::micRoom, 1 }, "Room", juce::NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f, dbAttr (-59.9f)));
     p.push_back (std::make_unique<C> (ID { pid::rrMode, 1 }, "Round Robin", juce::StringArray { "Cycle", "Random" }, 0));
     p.push_back (std::make_unique<B> (ID { pid::choke, 1 }, "Choke", false));
     p.push_back (std::make_unique<B> (ID { pid::polarity, 1 }, "Trigger Polarity", false));
+
+    // --- Mic mixer (one strip per instrument channel)
+    for (int c = 0; c < maxChannels; ++c)
+    {
+        const auto n = "Ch " + juce::String (c + 1) + " ";
+        p.push_back (std::make_unique<juce::AudioParameterInt> (ID { chMic (c), 1 }, n + "Mic", 0, maxMicsPerChannel - 1, 0,
+                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return "Mic " + juce::String (v + 1); })));
+        p.push_back (std::make_unique<P> (ID { chLevel (c), 1 }, n + "Level", juce::NormalisableRange<float> (-60.0f, 6.0f, 0.1f), 0.0f, dbAttr (-59.9f)));
+        p.push_back (std::make_unique<P> (ID { chPan (c), 1 }, n + "Pan", juce::NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f,
+                         Attr().withStringFromValueFunction ([] (float v, int)
+                         {
+                             const int pct = juce::roundToInt (std::abs (v) * 100.0f);
+                             return pct == 0 ? juce::String ("C") : juce::String (pct) + (v < 0 ? "L" : "R");
+                         })));
+        p.push_back (std::make_unique<B> (ID { chMute (c), 1 }, n + "Mute", false));
+    }
 
     // --- EQ
     p.push_back (std::make_unique<B> (ID { pid::eqOn, 1 }, "EQ On", true));

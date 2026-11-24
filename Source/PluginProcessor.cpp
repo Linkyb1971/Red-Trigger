@@ -9,6 +9,13 @@ RedTriggerProcessor::RedTriggerProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "RedTriggerState", createParameterLayout())
 {
+    for (int c = 0; c < maxChannels; ++c)
+    {
+        chMicParams[(size_t) c]   = apvts.getRawParameterValue (chMic (c));
+        chLevelParams[(size_t) c] = apvts.getRawParameterValue (chLevel (c));
+        chPanParams[(size_t) c]   = apvts.getRawParameterValue (chPan (c));
+        chMuteParams[(size_t) c]  = apvts.getRawParameterValue (chMute (c));
+    }
     startTimer (1000);
 }
 
@@ -97,9 +104,17 @@ void RedTriggerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float ceilingDb = std::max (param (pid::ceiling), dp.thresholdDb + 1.0f);
     const float dynamics = param (pid::dynamics) * 0.01f;
 
-    auto micGain = [] (float db) { return db <= -59.9f ? 0.0f : dbToGain (db); };
     SampleEngine::Settings es;
-    es.micGain = { micGain (param (pid::micDirect)), micGain (param (pid::micOverhead)), micGain (param (pid::micRoom)) };
+    for (int c = 0; c < maxChannels; ++c)
+    {
+        auto& mix = es.channels[(size_t) c];
+        const float lvl = chLevelParams[(size_t) c]->load();
+        const float g = (lvl <= -59.9f || chMuteParams[(size_t) c]->load() > 0.5f) ? 0.0f : dbToGain (lvl);
+        const float pan = chPanParams[(size_t) c]->load();
+        mix.gainL = g * std::min (1.0f, 1.0f - pan);   // balance law: centre = unity
+        mix.gainR = g * std::min (1.0f, 1.0f + pan);
+        mix.mic = juce::roundToInt (chMicParams[(size_t) c]->load());
+    }
     es.pitchSemis = param (pid::pitch);
     es.lengthMs = param (pid::length);
     es.fullLength = es.lengthMs >= 1999.0f;
@@ -262,6 +277,66 @@ void RedTriggerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         outPk = std::max ({ outPk, juce::FloatVectorOperations::findMaximum (o, n), -juce::FloatVectorOperations::findMinimum (o, n) });
     }
     outputPeak = std::max (outputPeak.load(), outPk);
+
+    renderPreview (buffer, numOut, n);
+}
+
+void RedTriggerProcessor::renderPreview (juce::AudioBuffer<float>& buffer, int numOut, int n) noexcept
+{
+    if (hasPendingPreview.load())
+    {
+        const juce::SpinLock::ScopedTryLockType lock (previewLock);
+        if (lock.isLocked())
+        {
+            activePreview = pendingPreview;
+            pendingPreview = nullptr;
+            previewPos = 0.0;
+            hasPendingPreview = false;
+        }
+    }
+
+    if (activePreview == nullptr)
+        return;
+
+    const auto& b = activePreview->buffer;
+    const double inc = activePreview->sampleRate / getSampleRate();
+    const int len = b.getNumSamples();
+    for (int i = 0; i < n; ++i)
+    {
+        const int ip = (int) previewPos;
+        if (ip + 1 >= len) { activePreview = nullptr; return; }
+        const float t = (float) (previewPos - ip);
+        for (int ch = 0; ch < numOut; ++ch)
+        {
+            const int src = std::min (ch, b.getNumChannels() - 1);
+            const float* d = b.getReadPointer (src);
+            buffer.addSample (ch, i, d[ip] + t * (d[ip + 1] - d[ip]));
+        }
+        previewPos += inc;
+    }
+}
+
+void RedTriggerProcessor::previewFile (const juce::File& file)
+{
+    PreviewSample::Ptr p;
+    if (file.existsAsFile())
+    {
+        juce::AudioFormatManager fm;
+        fm.registerBasicFormats();
+        if (std::unique_ptr<juce::AudioFormatReader> reader { fm.createReaderFor (file) })
+        {
+            p = new PreviewSample();
+            const int len = (int) std::min<juce::int64> (reader->lengthInSamples, (juce::int64) (reader->sampleRate * 20));
+            p->buffer.setSize ((int) std::min (2u, reader->numChannels), len);
+            reader->read (&p->buffer, 0, len, 0, true, true);
+            p->sampleRate = reader->sampleRate;
+            previewGraveyard.add (p);
+        }
+    }
+
+    const juce::SpinLock::ScopedLockType lock (previewLock);
+    pendingPreview = p;
+    hasPendingPreview = true;
 }
 
 bool RedTriggerProcessor::loadInstrument (const juce::File& file, juce::String& message)
@@ -296,10 +371,13 @@ bool RedTriggerProcessor::loadInstrument (const juce::File& file, juce::String& 
 
 void RedTriggerProcessor::timerCallback()
 {
-    // Free instruments nobody but the graveyard references any more.
+    // Free instruments / previews nobody but the graveyard references any more.
     for (int i = graveyard.size(); --i >= 0;)
         if (graveyard.getObjectPointerUnchecked (i)->getReferenceCount() == 1)
             graveyard.remove (i);
+    for (int i = previewGraveyard.size(); --i >= 0;)
+        if (previewGraveyard.getObjectPointerUnchecked (i)->getReferenceCount() == 1)
+            previewGraveyard.remove (i);
 }
 
 void RedTriggerProcessor::getStateInformation (juce::MemoryBlock& destData)

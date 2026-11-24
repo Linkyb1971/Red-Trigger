@@ -33,9 +33,6 @@ RedTriggerEditor::RedTriggerEditor (RedTriggerProcessor& p)
     make (sampleKnobs, pid::pitch, "PITCH");
     make (sampleKnobs, pid::length, "LENGTH");
     make (sampleKnobs, pid::offset, "OFFSET");
-    make (sampleKnobs, pid::micDirect, "DIRECT", col::accent2);
-    make (sampleKnobs, pid::micOverhead, "OVERHEAD", col::accent2);
-    make (sampleKnobs, pid::micRoom, "ROOM", col::accent2);
 
     make (eqKnobs, pid::eqHpf, "HPF", col::accent2);
     make (eqKnobs, pid::eqLowFreq, "LOW FREQ");
@@ -56,8 +53,9 @@ RedTriggerEditor::RedTriggerEditor (RedTriggerProcessor& p)
     make (outKnobs, pid::blend, "BLEND");
     make (outKnobs, pid::outGain, "OUTPUT");
 
-    for (auto* panel : { &detectPanel, &samplePanel, &eqPanel, &compPanel, &outPanel })
+    for (auto* panel : { &detectPanel, &samplePanel, &eqPanel, &compPanel, &outPanel, &micPanel })
         addAndMakeVisible (panel);
+    micPanel.addAndMakeVisible (micMixer);
 
     for (auto& k : detectKnobs) detectPanel.addAndMakeVisible (*k);
     for (auto& k : sampleKnobs) samplePanel.addAndMakeVisible (*k);
@@ -142,7 +140,7 @@ RedTriggerEditor::RedTriggerEditor (RedTriggerProcessor& p)
     refreshInstrumentList();
     updateInstrumentInfo();
 
-    setSize (1120, 700);
+    setSize (1120, 790);
     startTimerHz (30);
 }
 
@@ -166,7 +164,8 @@ void RedTriggerEditor::showBuilder (bool show)
     builderButton.setToggleState (show, juce::dontSendNotification);
     builder.setVisible (show);
     for (juce::Component* c : { (juce::Component*) &display, (juce::Component*) &detectPanel, (juce::Component*) &samplePanel,
-                                (juce::Component*) &eqPanel, (juce::Component*) &compPanel, (juce::Component*) &outPanel })
+                                (juce::Component*) &eqPanel, (juce::Component*) &compPanel, (juce::Component*) &outPanel,
+                                (juce::Component*) &micPanel })
         c->setVisible (! show);
 }
 
@@ -203,15 +202,17 @@ void RedTriggerEditor::updateInstrumentInfo()
     else if (proc.getInstrumentFile() != juce::File())
         text = "Missing: " + proc.getInstrumentFile().getFileName();
     else
-        text = "Load a .dtz instrument, or build one from your samples with the Instrument Builder.";
+        text = "Load a .dtz instrument, or build one from your samples with the Instrument Editor.";
 
     if (proc.getLastLoadError().isNotEmpty())
         text += "   (" + proc.getLastLoadError() + ")";
     infoLabel.setText (text, juce::dontSendNotification);
 
-    // Dim mic knobs the instrument doesn't have.
-    for (int m = 0; m < numMics; ++m)
-        sampleKnobs[(size_t) (4 + m)]->setAlpha (inst == nullptr || inst->micPresent[(size_t) m] ? 1.0f : 0.35f);
+    if (inst.get() != shownInstrument)
+    {
+        shownInstrument = inst.get();
+        micMixer.setInstrument (inst.get());
+    }
 }
 
 void RedTriggerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -305,24 +306,27 @@ void RedTriggerEditor::resized()
         velocityLabel.setBounds (b);
     }
 
-    // row 2
-    samplePanel.setBounds (10, 268, 1100, 142);
+    // row 2: sample controls + mic mixer
+    samplePanel.setBounds (10, 268, 470, 232);
     {
         auto c = samplePanel.content();
-        auto rest = layoutRow (c.withHeight (knobH), sampleKnobs, 0, 7, 92);
-        rest.removeFromLeft (24);
-        auto rr = rest.removeFromLeft (140).withSizeKeepingCentre (140, 50);
+        layoutRow (c.removeFromTop (knobH), sampleKnobs, 0, 4, c.getWidth() / 4);
+        c.removeFromTop (14);
+        auto row = c.removeFromTop (48);
+        auto rr = row.removeFromLeft (150);
         rrLabel.setBounds (rr.removeFromTop (20));
         rrBox.setBounds (rr.removeFromTop (26));
-        rest.removeFromLeft (24);
-        auto t = rest.removeFromLeft (110).withSizeKeepingCentre (110, 60);
-        chokeToggle.setBounds (t.removeFromTop (26));
-        t.removeFromTop (8);
-        polarityToggle.setBounds (t.removeFromTop (26));
+        row.removeFromLeft (20);
+        auto t = row.removeFromBottom (26);
+        chokeToggle.setBounds (t.removeFromLeft (110));
+        t.removeFromLeft (10);
+        polarityToggle.setBounds (t.removeFromLeft (110));
     }
+    micPanel.setBounds (488, 268, 622, 232);
+    micMixer.setBounds (micPanel.content());
 
     // row 3
-    eqPanel.setBounds (10, 418, 380, 272);
+    eqPanel.setBounds (10, 508, 380, 272);
     {
         auto c = eqPanel.content();
         const int w = c.getWidth() / 5;
@@ -332,7 +336,7 @@ void RedTriggerEditor::resized()
         eqOnToggle.setBounds (r2.removeFromLeft (w).withSizeKeepingCentre (w - 8, 26));
     }
 
-    compPanel.setBounds (398, 418, 380, 272);
+    compPanel.setBounds (398, 508, 380, 272);
     {
         auto c = compPanel.content();
         grMeter.setBounds (c.removeFromRight (40));
@@ -345,7 +349,7 @@ void RedTriggerEditor::resized()
         overEasyToggle.setBounds (b.removeFromLeft (100));
     }
 
-    outPanel.setBounds (786, 418, 324, 272);
+    outPanel.setBounds (786, 508, 324, 272);
     {
         auto c = outPanel.content();
         auto meters = c.removeFromRight (84);

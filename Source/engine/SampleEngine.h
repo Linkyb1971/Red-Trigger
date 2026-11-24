@@ -4,7 +4,8 @@
 
 namespace dt
 {
-/** Polyphonic one-shot sample player with velocity layers, round robin and 3 mic channels.
+/** Polyphonic one-shot sample player with velocity layers, round robin and up to 8 mic
+    channels, each with a selectable mic, level and pan.
     Audio-thread safe: no allocation after prepare(). */
 class SampleEngine
 {
@@ -14,7 +15,8 @@ public:
 
     struct Settings
     {
-        std::array<float, numMics> micGain { 1.0f, 1.0f, 1.0f };
+        struct ChannelMix { int mic = 0; float gainL = 1.0f, gainR = 1.0f; };
+        std::array<ChannelMix, maxChannels> channels {};
         float pitchSemis = 0.0f;
         bool fullLength = true;
         float lengthMs = 2000.0f;
@@ -118,21 +120,31 @@ public:
                 continue;
 
             const Hit& h = *v.hit;
-            const float* micL[numMics] {};
-            const float* micR[numMics] {};
-            int micLen[numMics] {};
-            float micG[numMics] {};
+            const float* micL[maxChannels] {};
+            const float* micR[maxChannels] {};
+            int micLen[maxChannels] {};
+            float gL[maxChannels] {}, gR[maxChannels] {};
             int numUsed = 0;
 
-            for (int m = 0; m < numMics; ++m)
+            for (int c = 0; c < instrument->numChannels() && c < maxChannels; ++c)
             {
-                const auto& b = h.mic[(size_t) m];
-                if (b.getNumSamples() == 0 || s.micGain[(size_t) m] <= 0.0f)
+                const auto& mix = s.channels[(size_t) c];
+                if (mix.gainL <= 0.0f && mix.gainR <= 0.0f)
                     continue;
-                micL[numUsed] = b.getReadPointer (0);
-                micR[numUsed] = b.getNumChannels() > 1 ? b.getReadPointer (1) : micL[numUsed];
-                micLen[numUsed] = b.getNumSamples();
-                micG[numUsed] = s.micGain[(size_t) m];
+
+                // selected mic; if this hit lacks it, fall back to the first mic that exists
+                const int numMics = instrument->channels[(size_t) c].mics.size();
+                const juce::AudioBuffer<float>* b = &h.slots[(size_t) instrument->slotIndex (c, juce::jlimit (0, numMics - 1, mix.mic))];
+                for (int m = 0; b->getNumSamples() == 0 && m < numMics; ++m)
+                    b = &h.slots[(size_t) instrument->slotIndex (c, m)];
+                if (b->getNumSamples() == 0)
+                    continue;
+
+                micL[numUsed] = b->getReadPointer (0);
+                micR[numUsed] = b->getNumChannels() > 1 ? b->getReadPointer (1) : micL[numUsed];
+                micLen[numUsed] = b->getNumSamples();
+                gL[numUsed] = mix.gainL;
+                gR[numUsed] = mix.gainR;
                 ++numUsed;
             }
 
@@ -149,8 +161,8 @@ public:
                 {
                     const float sl = hermite (micL[k], micLen[k], ip, t);
                     const float sr = micR[k] == micL[k] ? sl : hermite (micR[k], micLen[k], ip, t);
-                    l += sl * micG[k];
-                    r += sr * micG[k];
+                    l += sl * gL[k];
+                    r += sr * gR[k];
                 }
 
                 const float g = v.gain * v.fade;
